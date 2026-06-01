@@ -1,14 +1,25 @@
 use axum::{
+    body::Bytes,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
 };
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use sha2::Sha256;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+
+type HmacSha256 = Hmac<Sha256>;
+
+const TIMESTAMP_WINDOW_SECS: i64 = 300;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -17,6 +28,7 @@ struct AppState {
     http: Client,
     notion_client_id: String,
     notion_client_secret: String,
+    hmac_secret: Vec<u8>,
 }
 
 // ── Request / Response types ──────────────────────────────────────────────────
@@ -51,13 +63,61 @@ fn err(status: StatusCode, msg: impl Into<String>) -> AppError {
     (status, Json(ErrorResponse { error: msg.into() }))
 }
 
+// ── HMAC verification ─────────────────────────────────────────────────────────
+
+fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) -> Result<(), AppError> {
+    let ts = headers
+        .get("x-pinkha-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "missing X-Pinkha-Timestamp"))?;
+    let nonce = headers
+        .get("x-pinkha-nonce")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "missing X-Pinkha-Nonce"))?;
+    let sig = headers
+        .get("x-pinkha-signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "missing X-Pinkha-Signature"))?;
+
+    let ts_int: i64 = ts
+        .parse()
+        .map_err(|_| err(StatusCode::UNAUTHORIZED, "invalid timestamp"))?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if (now - ts_int).abs() > TIMESTAMP_WINDOW_SECS {
+        return Err(err(StatusCode::UNAUTHORIZED, "timestamp out of window"));
+    }
+
+    let sig_bytes =
+        hex::decode(sig).map_err(|_| err(StatusCode::UNAUTHORIZED, "invalid signature encoding"))?;
+
+    let mut mac =
+        HmacSha256::new_from_slice(&state.hmac_secret).expect("HMAC accepts any key length");
+    mac.update(ts.as_bytes());
+    mac.update(b"\n");
+    mac.update(nonce.as_bytes());
+    mac.update(b"\n");
+    mac.update(body);
+
+    mac.verify_slice(&sig_bytes)
+        .map_err(|_| err(StatusCode::UNAUTHORIZED, "invalid signature"))
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 async fn exchange_token(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<TokenRequest>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<NotionTokenResponse>, AppError> {
-    if body.code.is_empty() {
+    verify_signature(&state, &headers, &body)?;
+
+    let req: TokenRequest = serde_json::from_slice(&body)
+        .map_err(|_| err(StatusCode::BAD_REQUEST, "invalid JSON body"))?;
+
+    if req.code.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "code is required"));
     }
 
@@ -68,8 +128,8 @@ async fn exchange_token(
         .header("Notion-Version", "2022-06-28")
         .json(&serde_json::json!({
             "grant_type": "authorization_code",
-            "code": body.code,
-            "redirect_uri": body.redirect_uri,
+            "code": req.code,
+            "redirect_uri": req.redirect_uri,
         }))
         .send()
         .await
@@ -98,11 +158,39 @@ async fn health() -> &'static str {
     "ok"
 }
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+fn build_cors() -> CorsLayer {
+    let raw = std::env::var("ALLOWED_ORIGINS").unwrap_or_default();
+    let origins: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .collect();
+
+    let layer = CorsLayer::new()
+        .allow_methods([Method::POST, Method::GET, Method::OPTIONS])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderName::from_static("x-pinkha-timestamp"),
+            axum::http::HeaderName::from_static("x-pinkha-nonce"),
+            axum::http::HeaderName::from_static("x-pinkha-signature"),
+        ]);
+
+    if origins.is_empty() {
+        // No browser origin allowed. The iOS app uses URLSession, which never
+        // triggers CORS — so this is the safe default for a native-only client.
+        layer
+    } else {
+        layer.allow_origin(AllowOrigin::list(origins))
+    }
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
-    // Load .env in local dev (no-op in production).
     let _ = dotenvy::dotenv();
 
     let dsn = std::env::var("SENTRY_DSN").unwrap_or_default();
@@ -129,18 +217,28 @@ async fn main() {
             .expect("NOTION_CLIENT_ID is required"),
         notion_client_secret: std::env::var("NOTION_CLIENT_SECRET")
             .expect("NOTION_CLIENT_SECRET is required"),
+        hmac_secret: std::env::var("PROXY_HMAC_SECRET")
+            .expect("PROXY_HMAC_SECRET is required")
+            .into_bytes(),
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // Per-IP rate limit: 5 requests / minute, burst of 5.
+    // NOTE: behind Railway's proxy the peer IP is the proxy; if we need true
+    // client IPs, switch to a `SmartIpKeyExtractor` reading X-Forwarded-For.
+    let governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(12)
+            .burst_size(5)
+            .finish()
+            .expect("valid governor config"),
+    );
 
     let app = Router::new()
         .route("/oauth/token", post(exchange_token))
         .route("/health", get(health))
+        .layer(GovernorLayer::new(governor_conf))
         .layer(sentry_tower::SentryLayer::new_from_top())
-        .layer(cors)
+        .layer(build_cors())
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());

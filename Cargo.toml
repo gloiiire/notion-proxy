@@ -14,4 +14,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sentry             = { version = "0.48", features = ["tracing"] }
 sentry-tower       = "0.48"
 tower-http         = { version = "0.6", features = ["cors"] }
+tower_governor     = "0.8"
+hmac               = "0.12"
+sha2               = "0.10"
+hex                = "0.4"
 dotenvy            = "0.15"
