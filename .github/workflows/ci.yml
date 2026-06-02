@@ -40,3 +40,32 @@ jobs:
         # tree. Dependabot covers GitHub-side scanning; this catches CVEs at PR
         # time before merge.
         run: cargo audit --deny warnings
+
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run tests with coverage
+        # Two passes share the same instrumented data: --no-report collects,
+        # then `report` formats. Cheaper than running the test suite twice.
+        run: |
+          cargo llvm-cov --no-report --all-targets
+          cargo llvm-cov report --summary-only | tee coverage.txt
+      - name: Publish coverage to job summary
+        run: |
+          {
+            echo '## Test coverage'
+            echo ''
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
