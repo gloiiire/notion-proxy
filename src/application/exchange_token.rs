@@ -24,10 +24,7 @@ pub enum ExchangeTokenError {
 
 #[async_trait]
 pub trait ExchangeTokenPort: Send + Sync {
-    async fn execute(
-        &self,
-        input: ExchangeTokenInput,
-    ) -> Result<NotionToken, ExchangeTokenError>;
+    async fn execute(&self, input: ExchangeTokenInput) -> Result<NotionToken, ExchangeTokenError>;
 }
 
 pub struct ExchangeTokenUseCase<N: NotionGateway, C: Clock> {
@@ -48,10 +45,7 @@ impl<N: NotionGateway, C: Clock> ExchangeTokenUseCase<N, C> {
 
 #[async_trait]
 impl<N: NotionGateway, C: Clock> ExchangeTokenPort for ExchangeTokenUseCase<N, C> {
-    async fn execute(
-        &self,
-        input: ExchangeTokenInput,
-    ) -> Result<NotionToken, ExchangeTokenError> {
+    async fn execute(&self, input: ExchangeTokenInput) -> Result<NotionToken, ExchangeTokenError> {
         let now = self.clock.now_unix();
         signature::verify(
             &self.hmac_secret,
@@ -142,7 +136,11 @@ mod tests {
             redirect_uri: &str,
         ) -> Result<NotionToken, NotionError> {
             *self.last_call.lock().unwrap() = Some((code.into(), redirect_uri.into()));
-            self.result.lock().unwrap().take().expect("FakeNotion called twice")
+            self.result
+                .lock()
+                .unwrap()
+                .take()
+                .expect("FakeNotion called twice")
         }
     }
 

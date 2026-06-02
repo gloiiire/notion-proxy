@@ -14,12 +14,7 @@ pub struct NotionHttpGateway {
 }
 
 impl NotionHttpGateway {
-    pub fn new(
-        http: Client,
-        base_url: String,
-        client_id: String,
-        client_secret: String,
-    ) -> Self {
+    pub fn new(http: Client, base_url: String, client_id: String, client_secret: String) -> Self {
         Self {
             http,
             base_url,

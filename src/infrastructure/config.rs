@@ -13,8 +13,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         Self {
-            notion_client_id: env::var("NOTION_CLIENT_ID")
-                .expect("NOTION_CLIENT_ID is required"),
+            notion_client_id: env::var("NOTION_CLIENT_ID").expect("NOTION_CLIENT_ID is required"),
             notion_client_secret: env::var("NOTION_CLIENT_SECRET")
                 .expect("NOTION_CLIENT_SECRET is required"),
             notion_base_url: env::var("NOTION_BASE_URL")

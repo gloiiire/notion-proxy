@@ -84,7 +84,14 @@ mod tests {
         let secret = b"secret";
         let sig = sign(secret, "100", "n", b"body");
         assert_eq!(
-            verify(secret, "100", "n", &sig, b"body", 100 + TIMESTAMP_WINDOW_SECS + 1),
+            verify(
+                secret,
+                "100",
+                "n",
+                &sig,
+                b"body",
+                100 + TIMESTAMP_WINDOW_SECS + 1
+            ),
             Err(SignatureError::OutOfWindow)
         );
     }
@@ -94,7 +101,14 @@ mod tests {
         let secret = b"secret";
         let sig = sign(secret, "1000", "n", b"body");
         assert_eq!(
-            verify(secret, "1000", "n", &sig, b"body", 1000 - TIMESTAMP_WINDOW_SECS - 1),
+            verify(
+                secret,
+                "1000",
+                "n",
+                &sig,
+                b"body",
+                1000 - TIMESTAMP_WINDOW_SECS - 1
+            ),
             Err(SignatureError::OutOfWindow)
         );
     }
@@ -104,7 +118,14 @@ mod tests {
         let secret = b"secret";
         let sig = sign(secret, "100", "n", b"body");
         assert_eq!(
-            verify(secret, "100", "n", &sig, b"body", 100 + TIMESTAMP_WINDOW_SECS),
+            verify(
+                secret,
+                "100",
+                "n",
+                &sig,
+                b"body",
+                100 + TIMESTAMP_WINDOW_SECS
+            ),
             Ok(())
         );
     }

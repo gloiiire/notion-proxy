@@ -72,11 +72,7 @@ fn token() -> NotionToken {
     }
 }
 
-fn build_app(
-    gateway: impl NotionGateway + 'static,
-    secret: Vec<u8>,
-    now: i64,
-) -> axum::Router {
+fn build_app(gateway: impl NotionGateway + 'static, secret: Vec<u8>, now: i64) -> axum::Router {
     build_app_with_origins(gateway, secret, now, "")
 }
 
@@ -388,11 +384,7 @@ async fn rate_limiter_blocks_after_burst() {
     // governor state lives in the Router, so all requests share its bucket.
     // We only need ONE successful response shape; subsequent calls past the
     // burst should be rate-limited *before* hitting the use case.
-    let app = build_app(
-        AlwaysOkGateway,
-        secret.clone(),
-        100,
-    );
+    let app = build_app(AlwaysOkGateway, secret.clone(), 100);
 
     // Burst size is 5 → first 5 succeed, 6th is throttled.
     let mut last_status = StatusCode::IM_A_TEAPOT;
