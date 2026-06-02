@@ -30,6 +30,7 @@ tower-http         = { version = "0.6", features = ["cors"] }
 tower_governor     = "0.8"
 hmac               = "0.12"
 sha2               = "0.10"
+async-trait        = "0.1"
 hex                = "0.4"
 urlencoding        = "2.1"
 dotenvy            = "0.15"
@@ -37,3 +38,8 @@ dotenvy            = "0.15"
 # AWS Lambda Function URLs or API Gateway when AWS_LAMBDA_FUNCTION_NAME is set.
 # Same binary keeps working locally with `axum::serve` when the env var is absent.
 lambda_http        = "0.13"
+
+[dev-dependencies]
+wiremock    = "0.6"
+tower       = { version = "0.5", features = ["util"] }
+serial_test = "3"
