@@ -57,10 +57,18 @@ jobs:
       - name: Run tests with coverage
         # Two passes share the same instrumented data: --no-report collects,
         # then `report` formats. Cheaper than running the test suite twice.
+        # main.rs is bootstrap (sentry init, lambda detection) and is not
+        # reachable from the test process; excluding it makes the threshold
+        # reflect actual logic coverage.
         run: |
           cargo llvm-cov --no-report --all-targets
-          cargo llvm-cov report --summary-only | tee coverage.txt
+          cargo llvm-cov report \
+            --ignore-filename-regex 'main\.rs' \
+            --summary-only \
+            --fail-under-lines 98 \
+            | tee coverage.txt
       - name: Publish coverage to job summary
+        if: always()
         run: |
           {
             echo '## Test coverage'
