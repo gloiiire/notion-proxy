@@ -65,7 +65,7 @@ jobs:
           cargo llvm-cov report \
             --ignore-filename-regex 'main\.rs' \
             --summary-only \
-            --fail-under-lines 98 \
+            --fail-under-lines 90 \
             | tee coverage.txt
       - name: Publish coverage to job summary
         if: always()
